@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CDN Playable Chess</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <style>
+        @keyframes checkGlow {
+            0%, 100% { box-shadow: inset 0 0 12px 4px rgba(239, 68, 68, 0.7); }
+            50% { box-shadow: inset 0 0 20px 8px rgba(239, 68, 68, 0.9); }
+        }
+        .king-in-check {
+            animation: checkGlow 0.8s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const THEMES = {
+            classic: { name: 'Classic', light: '#f0d9b5', dark: '#b58863' },
+            forest:  { name: 'Forest',   light: '#86efac', dark: '#166534' },
+        }
+
+        function ChessApp() {
+            const [game, setGame] = useState(new Chess());
+            const [selectedSquare, setSelectedSquare] = useState(null);
+            const [optionSquares, setOptionSquares] = useState([]);
+            const [moveHistory, setMoveHistory] = useState([]);
+            // flipped board state
+            const [flipped, setFlipped] = useState(false);
+            // timer variables
+            const INITIAL_TIME = 600; // 10 minutes in seconds
+            const [whiteTime, setWhiteTime] = useState(INITIAL_TIME);
+            const [blackTime, setBlackTime] = useState(INITIAL_TIME);
+            const [timerRunning, setTimerRunning] = useState(false);
+            const timerRef = useRef(null);
+            // last move variables
+            const [lastMove, setLastMove] = useState(null);
+            //theme state variable
+            const [theme, setTheme] = useState('classic');
+            // game-over state variable
+            const [showModal, setShowModal] = useState(false);
+            // one-level powerup
+            const [whitePowerUsed, setWhitePowerUsed] = useState(false);
+            const [blackPowerUsed, setBlackPowerUsed] = useState(false);
+            const [powerUpMode, setPowerUpMode] = useState(false);
+            const [powerUpSquare, setPowerUpSquare] = useState(null);
+
+
+            // Mapping pieces to Unicode
+            const pieceSymbols = {
+                'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚',
+                'P': '♙', 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔'
+            };
+
+            const board = game.board();
+
+            useEffect(() => {
+                if (timerRunning && !game.game_over()) {
+                    timerRef.current = setInterval(() => {
+                        if (game.turn() === 'w') {
+                            setWhiteTime(prev => {
+                                if (prev <= 1) {
+                                    clearInterval(timerRef.current);
+                                    setTimerRunning(false);
+                                    return 0;
+                                }
+                                return prev - 1;
+                            });
+                        } else {
+                            setBlackTime(prev => {
+                                if (prev <= 1) {
+                                    clearInterval(timerRef.current);
+                                    setTimerRunning(false);
+                                    return 0;
+                                }
+                                return prev - 1;
+                            });
+                        }
+                    }, 1000);
+                }
+                return () => clearInterval(timerRef.current);
+            }, [timerRunning, game]);
+
+            useEffect(() => {
+                if (game.game_over()) {
+                    setTimerRunning(false);
+                    setTimeout(() => setShowModal(true), 400);
+                }
+            }, [game]);
+
+            function getCapturedPieces() {
+                const initial = { p: 8, r: 2, n: 2, b: 2, q: 1};
+                const current = {
+                    w: { p: 0, r: 0, n: 0, b: 0, q: 0 },
+                    b: { p: 0, r: 0, n: 0, b: 0, q: 0 }
+                };
+
+                board.forEach(row => row.forEach(sq => {
+                    if (sq) current[sq.color][sq.type]++;
+                }));
+
+                const captured = { w: [], b: []};
+                ['p', 'r', 'n', 'b', 'q'].forEach(type => {
+                    for (let x = 0; x < initial[type] - current.w[type]; x++) {
+                        captured.w.push(pieceSymbols[type.toUpperCase()]);
+                    }
+                    for (let x = 0; x < initial[type] - current.b[type]; x++) {
+                        captured.b.push(pieceSymbols[type]);
+                    }
+                });
+
+                return captured;
+            }
+
+            const captured = getCapturedPieces();
+
+            function getSquareLabel(i, j) {
+                return String.fromCharCode(97 + j) + (8 - i);
+            }
+
+            const UPGRADE_MAP = {
+                'p': ['n', 'b'],
+                'n': ['r'],
+                'b': ['r'],
+                'r': ['q'],
+            };
+
+            function handlePowerUp(square, chosenType) {
+                const piece = game.get(square);
+                if (!piece) return;
+
+                const color = piece.color;
+                game.remove(square);
+                game.put({ type: chosenType, color: color }, square);
+                setGame(new Chess(game.fen()));
+
+                if (color === 'w') setWhitePowerUsed(true);
+                else setBlackPowerUsed(true);
+
+                setPowerUpMode(false);
+                setPowerUpSquare(null);
+            }
+
+            function handlePowerUpClick(square) {
+                const piece = game.get(square);
+                if (!piece || piece.color !== game.turn()) return;
+                if (piece.type === 'k' || piece.type === 'q') return;
+
+                const upgrades = UPGRADE_MAP[piece.type];
+                if (upgrades.length === 1) {
+                    handlePowerUp(square, upgrades[0]);
+                } else {
+                    setPowerUpSquare(square);
+                }
+            }
+
+            function handleSquareClick(square) {
+                if (powerUpMode) {
+                    handlePowerUpClick(square);
+                    return;
+                }
+                // If a square is already selected, try to move there
+                if (selectedSquare) {
+                    const move = game.move({
+                        from: selectedSquare,
+                        to: square,
+                        promotion: 'q' // Always promote to queen for simplicity
+                    });
+
+                    if (move) {
+                        if (!timerRunning) setTimerRunning(true);
+                        setLastMove({ from: move.from, to: move.to });
+                        setGame(new Chess(game.fen())); // Trigger re-render with new state
+                        setMoveHistory(prev => [...prev, move.san]);
+                        setSelectedSquare(null);
+                        setOptionSquares([]);
+                        return;
+                    }
+                }
+
+                // Otherwise, select the piece and show legal moves
+                const piece = game.get(square);
+                if (piece && piece.color === game.turn()) {
+                    setSelectedSquare(square);
+                    const moves = game.moves({ square, verbose: true });
+                    setOptionSquares(moves.map(m => m.to));
+                } else {
+                    setSelectedSquare(null);
+                    setOptionSquares([]);
+                }
+            }
+
+            const resetGame = () => {
+                const newGame = new Chess();
+                setGame(newGame);
+                setSelectedSquare(null);
+                setOptionSquares([]);
+                setMoveHistory([]);
+
+                setShowModal(false);
+
+                setLastMove(null);
+
+                setWhiteTime(INITIAL_TIME);
+                setBlackTime(INITIAL_TIME);
+                setTimerRunning(false);
+                clearInterval(timerRef.current);
+
+                setWhitePowerUsed(false);
+                setBlackPowerUsed(false);
+                setPowerUpMode(false);
+                setPowerUpSquare(null);
+            };
+
+            const undoMove = () => {
+
+                const newGame = new Chess();
+                const newHistory = moveHistory.slice(0, -1);
+                newHistory.forEach(move => newGame.move(move));
+                setGame(newGame);
+                setMoveHistory(newHistory);
+                setSelectedSquare(null);
+                setOptionSquares([]);
+
+                if (newHistory.length > 0) {
+                    const tempGame = new Chess();
+                    let lastMoveObj = null;
+                    newHistory.forEach(m => {lastMoveObj = tempGame.move(m); });
+                    setLastMove({ from: lastMoveObj.from, to: lastMoveObj.to });
+                } else {
+                    setLastMove(null);
+                }
+            }
+
+            const status = () => {
+                if (game.in_checkmate()) return `Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins.`;
+                if (game.in_draw()) return "Draw!";
+                return `${game.turn() === 'w' ? "White's" : "Black's"} Turn`;
+            };
+
+            function findKingSquare(color) {
+                for (let i = 0; i < 8; i++) {
+                    for (let j = 0; j < 8; j++) {
+                        const sq = board[i][j];
+                        if (sq && sq.type === 'k' && sq.color === color) {
+                            return getSquareLabel(i, j);
+                        }
+                    }
+                }
+                return null;
+            }
+
+            const kingInCheck = game.in_check() ? findKingSquare(game.turn()) : null;
+
+            const rowIndices = flipped ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
+            const colIndices = flipped ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
+
+            function formatTime(seconds) {
+                const m = Math.floor(seconds / 60);
+                const s = seconds % 60;
+                return `${m}:${s.toString().padStart(2, '0')}`;
+            }
+
+            return (
+                <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6">
+                    <div className="text-center">
+                        <h1 className="text-3xl font-bold text-yellow-500 mb-2">React CDN Chess</h1>
+                        <p className={`text-lg font-medium ${game.in_check() ? 'text-red-500 animate-pulse' : 'text-gray-300'}`}>
+                            {status()}
+                        </p>
+                    </div>
+
+                    {/* Chess Timers */}
+                    <div className="flex gap-4">
+                        <div className={`px-3 py-1 rounded font-mono text-sm font-bold
+                            ${game.turn() === 'w' && timerRunning ? 'bg-gray-700 ring-2 ring-green-500' : 'bg-gray-800'}
+                            ${whiteTime <= 30 ? 'text-red-400' : 'text-white'}`}>
+                            ♔ {formatTime(whiteTime)}
+                        </div>
+                        <div className={`px-3 py-1 rounded font-mono text-sm font-bold
+                            ${game.turn() === 'b' && timerRunning ? 'bg-gray-700 ring-2 ring-green-500' : 'bg-gray-800'}
+                            ${blackTime <= 30 ? 'text-red-400' : 'text-white'}`}>
+                            ♚ {formatTime(blackTime)}
+                        </div>
+                    </div>
+
+                    {/* Captured White Pieces Panel */}
+                    <div className="flex gap-1 text-xl min-h-[28px]">
+                        {captured.w.map((p, i) => (
+                            <span key={i} className="opacity-70">{p}</span>
+                        ))}  
+                    </div>
+
+                    <div className="grid grid-cols-8 border-4 border-gray-700 shadow-2xl">
+                        {/*
+                        {board.map((row, i) => 
+                            row.map((square, j) => {
+                        */}
+                        {rowIndices.map(i => 
+                            colIndices.map(j => {
+                                const square = board[i][j];
+                                const squareLabel = getSquareLabel(i, j);
+                                const isDark = (i + j) % 2 === 1;
+                                const isSelected = selectedSquare === squareLabel;
+                                const isOption = optionSquares.includes(squareLabel);
+                                const isLastFrom = lastMove && lastMove.from === squareLabel;
+                                const isLastTo = lastMove && lastMove.to === squareLabel;
+                                const isKingCheck = kingInCheck === squareLabel;
+
+                                return (
+                                    <div
+                                    style={{
+                                        backgroundColor: (isLastFrom || isLastTo) && !isSelected
+                                            ? 'rgba(234, 179, 8, 0.35)'
+                                            : isSelected
+                                                ? undefined
+                                                : isDark ? THEMES[theme].dark : THEMES[theme].light
+                                    }}
+                                        key={squareLabel}
+                                        onClick={() => handleSquareClick(squareLabel)}
+                                        className={`w-12 h-12 md:w-16 md:h-16 flex items-center justify-center text-4xl cursor-pointer relative
+                                            ${isSelected ? 'bg-yellow-200/50' : isDark ? 'bg-slate-700' : 'bg-slate-400'}
+                                            ${isKingCheck ? 'king-in-check' : ''}
+                                        `}
+                                    >
+                                        {/* Legal move indicator */}
+                                        {isOption && (
+                                            <div className="absolute w-4 h-4 bg-black/20 rounded-full z-0"></div>
+                                        )}
+                                        
+                                        <span className={`z-10 select-none ${square?.color === 'w' ? 'text-white drop-shadow-md' : 'text-black'}`}>
+                                            {square ? pieceSymbols[square.color === 'w' ? square.type.toUpperCase() : square.type] : ''}
+                                        </span>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+
+                    {/* Captured Black Pieces Panel */}
+                    <div className="flex gap-1 text-xl min-h-[28px]">
+                        {captured.b.map((p, i) => (
+                            <span key={i} className="opacity-70">{p}</span>
+                        ))}
+                    </div>
+
+                    <button 
+                        onClick={resetGame}
+                        className="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95"
+                    >
+                        New Game
+                    </button>
+
+                    <button
+                        onClick={undoMove}
+                        disabled={moveHistory.length === 0}
+                        className="bg-orange-600 hover:bg-orange-500 disabled:bg-gray-700 disabled:text-gray-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95"
+                    >
+                        Undo
+                    </button>
+                    
+                    <button
+                        onClick={() => setFlipped(f => !f)}
+                        className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95"
+                    >
+                        Flip board
+                    </button>
+
+                    {/* Power-Up Button */}
+                    <button
+                        onClick={() => {
+                            if (powerUpMode) {
+                                setPowerUpMode(false);
+                                setPowerUpSquare(null);
+                            } else {
+                                setPowerUpMode(true);
+                            }
+                        }}
+                        disabled={(game.turn() === 'w' && whitePowerUsed) || (game.turn() === 'b' && blackPowerUsed) || game.game_over()}
+                        className={`px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95
+                            ${powerUpMode ? 'bg-purple-500 ring-2 ring-yellow-400' : 'bg-purple-600 hover:bg-purple-500'}
+                            disabled:bg-gray-700 disabled:text-gray-500`}
+                    >
+                        {powerUpMode ? 'Cancel Power-Up' : `⚡ Power-Up (${game.turn() === 'w' ? (whitePowerUsed ? 'Used' : '1 left') : (blackPowerUsed ? 'Used' : '1 left')})`}
+                    </button>
+
+                    {/* Pawn upgrade choice popup */}
+                    {powerUpSquare && (
+                        <div className="flex gap-2 items-center bg-gray-800 px-4 py-2 rounded-lg border border-purple-500">
+                            <span className="text-sm text-gray-300 mr-2">Upgrade pawn to:</span>
+                            <button
+                                onClick={() => handlePowerUp(powerUpSquare, 'n')}
+                                className="text-2xl px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-all"
+                            >
+                                {game.turn() === 'w' ? '♘' : '♞'}
+                            </button>
+                            <button
+                                onClick={() => handlePowerUp(powerUpSquare, 'b')}
+                                className="text-2xl px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-all"
+                            >
+                                {game.turn() === 'w' ? '♗' : '♝'}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Theme Switcher */}
+                    <div className="flex flex-wrap gap-2">
+                        {Object.entries(THEMES).map(([key, t]) => (
+                            <button
+                                key={key}
+                                onClick={() => setTheme(key)}
+                                className={`px-3 py-1 rounded text-sm font-medium transition-all
+                                    ${theme === key ? 'bg-white text-gray-900 shadow-md' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+                            >
+                                {t.name}
+                            </button>
+                        ))}
+                    </div>
+
+
+                    {/* Move History Panel */}
+                    <div className="bg-gray-800 rounded-xl p-4 w-72 shadow-xl">
+                        <h2 className="text-lg font-bold text-gray-300 mb-3 border-b border-gray-700 pb-2">
+                            Move History
+                        </h2>
+                        <div className="overflow-y-auto max-h-[420px]">
+                            {moveHistory.length === 0 && (
+                                <p className="text-gray-500 text-sm italic">No moves yet.</p>
+                            )}
+                            <table className="w-full text-sm">
+                                <tbody>
+                                    {Array.from({ length: Math.ceil(moveHistory.length / 2) }).map((_, idx) => (
+                                        <tr key={idx} className="hover:bg-gray-700">
+                                            <td className="text-gray-500 pr-3 py-1 text-right w-8 font-mono">{idx + 1}.</td>
+                                            <td className="py-1 px-2 font-mono text-white w-20">{moveHistory[idx * 2]}</td>
+                                            <td className="py-1 px-2 font-mono text-gray-300 w-20">{moveHistory[idx * 2 + 1] || ''}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    {/* Game Over Modal */}
+                    {showModal && game.game_over() && (
+                        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+                            <div className="bg-gray-800 rounded-2xl p-8 max-w-sm w-full mx-4 text-center shadow-2xl border border-gray-700">
+                                <div className="text-5xl mb-4">
+                                    {game.in_checkmate() ? '👑' : '🤝'}
+                                </div>
+                                <h2 className="text-2xl font-bold text-white mb-2">Game Over</h2>
+                                <p className="text-lg text-gray-300 mb-6">{status()}</p>
+                                <div className="flex gap-3 justify-center">
+                                    <button
+                                        onClick={resetGame}
+                                        className="bg-green-600 hover:bg-green-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95"
+                                    >
+                                        Play Again
+                                    </button>
+                                    <button
+                                        onClick={() => setShowModal(false)}
+                                        className="bg-gray-600 hover:bg-gray-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95"
+                                    >
+                                        Review
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ChessApp />);
+    </script>
+</body>
+</html>
