@@ -273,182 +273,188 @@
             }
 
             return (
-                <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6">
-                    <div className="text-center">
-                        <h1 className="text-3xl font-bold text-yellow-500 mb-2">React CDN Chess</h1>
-                        <p className={`text-lg font-medium ${game.in_check() ? 'text-red-500 animate-pulse' : 'text-gray-300'}`}>
-                            {status()}
-                        </p>
-                    </div>
-
-                    {/* Chess Timers */}
-                    <div className="flex gap-4">
-                        <div className={`px-3 py-1 rounded font-mono text-sm font-bold
-                            ${game.turn() === 'w' && timerRunning ? 'bg-gray-700 ring-2 ring-green-500' : 'bg-gray-800'}
-                            ${whiteTime <= 30 ? 'text-red-400' : 'text-white'}`}>
-                            ♔ {formatTime(whiteTime)}
-                        </div>
-                        <div className={`px-3 py-1 rounded font-mono text-sm font-bold
-                            ${game.turn() === 'b' && timerRunning ? 'bg-gray-700 ring-2 ring-green-500' : 'bg-gray-800'}
-                            ${blackTime <= 30 ? 'text-red-400' : 'text-white'}`}>
-                            ♚ {formatTime(blackTime)}
-                        </div>
-                    </div>
-
-                    {/* Captured White Pieces Panel */}
-                    <div className="flex gap-1 text-xl min-h-[28px]">
-                        {captured.w.map((p, i) => (
-                            <span key={i} className="opacity-70">{p}</span>
-                        ))}  
-                    </div>
-
-                    <div className="grid grid-cols-8 border-4 border-gray-700 shadow-2xl">
-                        {/*
-                        {board.map((row, i) => 
-                            row.map((square, j) => {
-                        */}
-                        {rowIndices.map(i => 
-                            colIndices.map(j => {
-                                const square = board[i][j];
-                                const squareLabel = getSquareLabel(i, j);
-                                const isDark = (i + j) % 2 === 1;
-                                const isSelected = selectedSquare === squareLabel;
-                                const isOption = optionSquares.includes(squareLabel);
-                                const isLastFrom = lastMove && lastMove.from === squareLabel;
-                                const isLastTo = lastMove && lastMove.to === squareLabel;
-                                const isKingCheck = kingInCheck === squareLabel;
-
-                                return (
-                                    <div
-                                    style={{
-                                        backgroundColor: (isLastFrom || isLastTo) && !isSelected
-                                            ? 'rgba(234, 179, 8, 0.35)'
-                                            : isSelected
-                                                ? undefined
-                                                : isDark ? THEMES[theme].dark : THEMES[theme].light
-                                    }}
-                                        key={squareLabel}
-                                        onClick={() => handleSquareClick(squareLabel)}
-                                        className={`w-12 h-12 md:w-16 md:h-16 flex items-center justify-center text-4xl cursor-pointer relative
-                                            ${isSelected ? 'bg-yellow-200/50' : isDark ? 'bg-slate-700' : 'bg-slate-400'}
-                                            ${isKingCheck ? 'king-in-check' : ''}
-                                        `}
+                <div className="flex flex-col lg:flex-row items-center lg:items-start gap-6 w-full max-w-6xl">
+                    {/* Sidebar: controls stacked vertically */}
+                    <div className="flex flex-col gap-3 p-4 bg-gray-800/80 rounded-xl border border-gray-700 shrink-0 w-full sm:w-auto sm:min-w-[200px] order-last lg:order-first">
+                        <button 
+                            onClick={resetGame}
+                            className="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95 text-left"
+                        >
+                            New Game
+                        </button>
+                        <button
+                            onClick={undoMove}
+                            disabled={moveHistory.length === 0}
+                            className="bg-orange-600 hover:bg-orange-500 disabled:bg-gray-700 disabled:text-gray-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95 text-left"
+                        >
+                            Undo
+                        </button>
+                        <button
+                            onClick={() => setFlipped(f => !f)}
+                            className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95 text-left"
+                        >
+                            Flip board
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (powerUpMode) {
+                                    setPowerUpMode(false);
+                                    setPowerUpSquare(null);
+                                } else {
+                                    setPowerUpMode(true);
+                                }
+                            }}
+                            disabled={(game.turn() === 'w' && whitePowerUsed) || (game.turn() === 'b' && blackPowerUsed) || game.game_over()}
+                            className={`px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95 text-left
+                                ${powerUpMode ? 'bg-purple-500 ring-2 ring-yellow-400' : 'bg-purple-600 hover:bg-purple-500'}
+                                disabled:bg-gray-700 disabled:text-gray-500`}
+                        >
+                            {powerUpMode ? 'Cancel Power-Up' : `⚡ Power-Up (${game.turn() === 'w' ? (whitePowerUsed ? 'Used' : '1 left') : (blackPowerUsed ? 'Used' : '1 left')})`}
+                        </button>
+                        {powerUpSquare && (
+                            <div className="flex flex-col gap-2 bg-gray-700/80 px-3 py-2 rounded-lg border border-purple-500">
+                                <span className="text-sm text-gray-300">Upgrade pawn to:</span>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => handlePowerUp(powerUpSquare, 'n')}
+                                        className="text-2xl px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded transition-all flex-1"
                                     >
-                                        {/* Legal move indicator */}
-                                        {isOption && (
-                                            <div className="absolute w-4 h-4 bg-black/20 rounded-full z-0"></div>
-                                        )}
-                                        
-                                        <span className={`z-10 select-none ${square?.color === 'w' ? 'text-white drop-shadow-md' : 'text-black'}`}>
-                                            {square ? pieceSymbols[square.color === 'w' ? square.type.toUpperCase() : square.type] : ''}
-                                        </span>
-                                    </div>
-                                );
-                            })
+                                        {game.turn() === 'w' ? '♘' : '♞'}
+                                    </button>
+                                    <button
+                                        onClick={() => handlePowerUp(powerUpSquare, 'b')}
+                                        className="text-2xl px-3 py-1 bg-gray-600 hover:bg-gray-500 rounded transition-all flex-1"
+                                    >
+                                        {game.turn() === 'w' ? '♗' : '♝'}
+                                    </button>
+                                </div>
+                            </div>
                         )}
-                    </div>
-
-                    {/* Captured Black Pieces Panel */}
-                    <div className="flex gap-1 text-xl min-h-[28px]">
-                        {captured.b.map((p, i) => (
-                            <span key={i} className="opacity-70">{p}</span>
-                        ))}
-                    </div>
-
-                    <button 
-                        onClick={resetGame}
-                        className="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95"
-                    >
-                        New Game
-                    </button>
-
-                    <button
-                        onClick={undoMove}
-                        disabled={moveHistory.length === 0}
-                        className="bg-orange-600 hover:bg-orange-500 disabled:bg-gray-700 disabled:text-gray-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95"
-                    >
-                        Undo
-                    </button>
-                    
-                    <button
-                        onClick={() => setFlipped(f => !f)}
-                        className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95"
-                    >
-                        Flip board
-                    </button>
-
-                    {/* Power-Up Button */}
-                    <button
-                        onClick={() => {
-                            if (powerUpMode) {
-                                setPowerUpMode(false);
-                                setPowerUpSquare(null);
-                            } else {
-                                setPowerUpMode(true);
-                            }
-                        }}
-                        disabled={(game.turn() === 'w' && whitePowerUsed) || (game.turn() === 'b' && blackPowerUsed) || game.game_over()}
-                        className={`px-6 py-2 rounded-lg font-bold transition-all shadow-lg active:scale-95
-                            ${powerUpMode ? 'bg-purple-500 ring-2 ring-yellow-400' : 'bg-purple-600 hover:bg-purple-500'}
-                            disabled:bg-gray-700 disabled:text-gray-500`}
-                    >
-                        {powerUpMode ? 'Cancel Power-Up' : `⚡ Power-Up (${game.turn() === 'w' ? (whitePowerUsed ? 'Used' : '1 left') : (blackPowerUsed ? 'Used' : '1 left')})`}
-                    </button>
-
-                    {/* Pawn upgrade choice popup */}
-                    {powerUpSquare && (
-                        <div className="flex gap-2 items-center bg-gray-800 px-4 py-2 rounded-lg border border-purple-500">
-                            <span className="text-sm text-gray-300 mr-2">Upgrade pawn to:</span>
-                            <button
-                                onClick={() => handlePowerUp(powerUpSquare, 'n')}
-                                className="text-2xl px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-all"
-                            >
-                                {game.turn() === 'w' ? '♘' : '♞'}
-                            </button>
-                            <button
-                                onClick={() => handlePowerUp(powerUpSquare, 'b')}
-                                className="text-2xl px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-all"
-                            >
-                                {game.turn() === 'w' ? '♗' : '♝'}
-                            </button>
+                        <div className="pt-1 border-t border-gray-600">
+                            <span className="text-xs text-gray-400 block mb-2">Theme</span>
+                            <div className="flex flex-col gap-2">
+                                {Object.entries(THEMES).map(([key, t]) => (
+                                    <button
+                                        key={key}
+                                        onClick={() => setTheme(key)}
+                                        className={`px-3 py-1.5 rounded text-sm font-medium transition-all text-left
+                                            ${theme === key ? 'bg-white text-gray-900 shadow-md' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+                                    >
+                                        {t.name}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    )}
-
-                    {/* Theme Switcher */}
-                    <div className="flex flex-wrap gap-2">
-                        {Object.entries(THEMES).map(([key, t]) => (
-                            <button
-                                key={key}
-                                onClick={() => setTheme(key)}
-                                className={`px-3 py-1 rounded text-sm font-medium transition-all
-                                    ${theme === key ? 'bg-white text-gray-900 shadow-md' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
-                            >
-                                {t.name}
-                            </button>
-                        ))}
                     </div>
 
+                    {/* Main content: title, timers, board, move history */}
+                    <div className="flex flex-col items-center gap-4 flex-1">
+                        <div className="text-center">
+                            <h1 className="text-3xl font-bold text-yellow-500 mb-2">React CDN Chess</h1>
+                            <p className={`text-lg font-medium ${game.in_check() ? 'text-red-500 animate-pulse' : 'text-gray-300'}`}>
+                                {status()}
+                            </p>
+                        </div>
 
-                    {/* Move History Panel */}
-                    <div className="bg-gray-800 rounded-xl p-4 w-72 shadow-xl">
-                        <h2 className="text-lg font-bold text-gray-300 mb-3 border-b border-gray-700 pb-2">
-                            Move History
-                        </h2>
-                        <div className="overflow-y-auto max-h-[420px]">
-                            {moveHistory.length === 0 && (
-                                <p className="text-gray-500 text-sm italic">No moves yet.</p>
-                            )}
-                            <table className="w-full text-sm">
-                                <tbody>
-                                    {Array.from({ length: Math.ceil(moveHistory.length / 2) }).map((_, idx) => (
-                                        <tr key={idx} className="hover:bg-gray-700">
-                                            <td className="text-gray-500 pr-3 py-1 text-right w-8 font-mono">{idx + 1}.</td>
-                                            <td className="py-1 px-2 font-mono text-white w-20">{moveHistory[idx * 2]}</td>
-                                            <td className="py-1 px-2 font-mono text-gray-300 w-20">{moveHistory[idx * 2 + 1] || ''}</td>
-                                        </tr>
+                        {/* Chess Timers */}
+                        <div className="flex gap-4">
+                            <div className={`px-3 py-1 rounded font-mono text-sm font-bold
+                                ${game.turn() === 'w' && timerRunning ? 'bg-gray-700 ring-2 ring-green-500' : 'bg-gray-800'}
+                                ${whiteTime <= 30 ? 'text-red-400' : 'text-white'}`}>
+                                ♔ {formatTime(whiteTime)}
+                            </div>
+                            <div className={`px-3 py-1 rounded font-mono text-sm font-bold
+                                ${game.turn() === 'b' && timerRunning ? 'bg-gray-700 ring-2 ring-green-500' : 'bg-gray-800'}
+                                ${blackTime <= 30 ? 'text-red-400' : 'text-white'}`}>
+                                ♚ {formatTime(blackTime)}
+                            </div>
+                        </div>
+
+                        {/* Captured White Pieces Panel */}
+                        <div className="flex gap-1 text-xl min-h-[28px]">
+                            {captured.w.map((p, i) => (
+                                <span key={i} className="opacity-70">{p}</span>
+                            ))}  
+                        </div>
+
+                        {/* Board and Move History on same row */}
+                        <div className="flex flex-col sm:flex-row items-center gap-4">
+                            <div className="flex flex-col items-center gap-2">
+                                <div className="grid grid-cols-8 border-4 border-gray-700 shadow-2xl">
+                                {/*
+                                {board.map((row, i) => 
+                                    row.map((square, j) => {
+                                */}
+                                {rowIndices.map(i => 
+                                    colIndices.map(j => {
+                                        const square = board[i][j];
+                                        const squareLabel = getSquareLabel(i, j);
+                                        const isDark = (i + j) % 2 === 1;
+                                        const isSelected = selectedSquare === squareLabel;
+                                        const isOption = optionSquares.includes(squareLabel);
+                                        const isLastFrom = lastMove && lastMove.from === squareLabel;
+                                        const isLastTo = lastMove && lastMove.to === squareLabel;
+                                        const isKingCheck = kingInCheck === squareLabel;
+
+                                        return (
+                                            <div
+                                            style={{
+                                                backgroundColor: (isLastFrom || isLastTo) && !isSelected
+                                                    ? 'rgba(234, 179, 8, 0.35)'
+                                                    : isSelected
+                                                        ? undefined
+                                                        : isDark ? THEMES[theme].dark : THEMES[theme].light
+                                            }}
+                                                key={squareLabel}
+                                                onClick={() => handleSquareClick(squareLabel)}
+                                                className={`w-12 h-12 md:w-16 md:h-16 flex items-center justify-center text-4xl cursor-pointer relative
+                                                    ${isSelected ? 'bg-yellow-200/50' : isDark ? 'bg-slate-700' : 'bg-slate-400'}
+                                                    ${isKingCheck ? 'king-in-check' : ''}
+                                                `}
+                                            >
+                                                {/* Legal move indicator */}
+                                                {isOption && (
+                                                    <div className="absolute w-4 h-4 bg-black/20 rounded-full z-0"></div>
+                                                )}
+                                                
+                                                <span className={`z-10 select-none ${square?.color === 'w' ? 'text-white drop-shadow-md' : 'text-black'}`}>
+                                                    {square ? pieceSymbols[square.color === 'w' ? square.type.toUpperCase() : square.type] : ''}
+                                                </span>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                                </div>
+                                {/* Captured Black Pieces Panel */}
+                                <div className="flex gap-1 text-xl min-h-[28px]">
+                                    {captured.b.map((p, i) => (
+                                        <span key={i} className="opacity-70">{p}</span>
                                     ))}
-                                </tbody>
-                            </table>
+                                </div>
+                            </div>
+
+                            {/* Move History Panel */}
+                            <div className="bg-gray-800 rounded-xl p-4 w-72 shadow-xl shrink-0">
+                            <h2 className="text-lg font-bold text-gray-300 mb-3 border-b border-gray-700 pb-2">
+                                Move History
+                            </h2>
+                            <div className="overflow-y-auto max-h-[420px]">
+                                {moveHistory.length === 0 && (
+                                    <p className="text-gray-500 text-sm italic">No moves yet.</p>
+                                )}
+                                <table className="w-full text-sm">
+                                    <tbody>
+                                        {Array.from({ length: Math.ceil(moveHistory.length / 2) }).map((_, idx) => (
+                                            <tr key={idx} className="hover:bg-gray-700">
+                                                <td className="text-gray-500 pr-3 py-1 text-right w-8 font-mono">{idx + 1}.</td>
+                                                <td className="py-1 px-2 font-mono text-white w-20">{moveHistory[idx * 2]}</td>
+                                                <td className="py-1 px-2 font-mono text-gray-300 w-20">{moveHistory[idx * 2 + 1] || ''}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                         </div>
                     </div>
                     {/* Game Over Modal */}
